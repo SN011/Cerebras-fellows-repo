@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Marvin the Orb</title>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700&display=swap');
+
+        body {
+            margin: 0;
+            width: 800px;
+            height: 800px;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            background-color: #000000;
+            color: white;
+            font-family: 'Orbitron', sans-serif;
+        }
+
+        .container {
+            width: 100%;
+            height: 100%;
+            display: flex;
+            overflow-y: auto;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            text-align: center;
+            position: relative;
+        }
+
+        .orb {
+            width: 100px;
+            height: 100px;
+            background: linear-gradient(45deg, #8A2BE2, #00FFFF);
+            border-radius: 50%;
+            box-shadow: 0 0 30px rgba(138, 43, 226, 0.9), 0 0 60px rgba(0, 255, 255, 0.9);
+            margin-bottom: 20px;
+        }
+
+        .name-tag {
+            position: absolute;
+            top: -40px;
+            left: 50%;
+            transform: translateX(-50%);
+            color: #00FFFF;
+            font-size: 28px;
+            text-shadow: 0 0 10px #00FFFF, 0 0 20px #00FFFF;
+        }
+
+        .floating {
+            animation: float 3s ease-in-out infinite, glow 1.5s ease-in-out infinite alternate;
+        }
+
+        @keyframes float {
+            0% { transform: translateY(0px); }
+            50% { transform: translateY(-20px); }
+            100% { transform: translateY(0px); }
+        }
+
+        @keyframes glow {
+            from { box-shadow: 0 0 30px rgba(138, 43, 226, 0.9), 0 0 60px rgba(0, 255, 255, 0.9); }
+            to { box-shadow: 0 0 40px rgba(138, 43, 226, 1), 0 0 80px rgba(0, 255, 255, 1); }
+        }
+
+        button {
+            margin: 10px;
+            padding: 10px 20px;
+            font-size: 16px;
+            color: #00FFFF;
+            background-color: #000000;
+            border: 1px solid #00FFFF;
+            border-radius: 5px;
+            cursor: pointer;
+            transition: background-color 0.3s, color 0.3s;
+        }
+
+        button:hover {
+            background-color: #00FFFF;
+            color: #000000;
+        }
+
+        .chat {
+            width: 90%;
+            height: 80%;
+            display: flex;
+            flex-direction: column;
+            justify-content: flex-end;
+            align-items: center;
+        }
+
+        .chatWindow {
+            width: 100%;
+            height: 100%;
+            overflow-y: auto;
+            margin-bottom: 10px;
+            background: #333;
+            color: white;
+            padding: 10px;
+            border-radius: 10px;
+            box-shadow: 0 0 10px rgba(0, 0, 0, 0.5);
+            display: flex;
+            flex-direction: column;
+        }
+
+        .message {
+            margin: 10px 0;
+            max-width: 80%;
+            padding: 10px;
+            border-radius: 10px;
+            font-size: 16px;
+            word-wrap: break-word;
+        }
+
+        .message.user {
+            align-self: flex-end;
+            background-color: #007AFF;
+            color: white;
+            border-bottom-right-radius: 0;
+        }
+
+        .message.bot {
+            align-self: flex-start;
+            background-color: #4CAF50;
+            color: white;
+            border-bottom-left-radius: 0;
+        }
+
+        .inputContainer {
+            width: 100%;
+            display: flex;
+        }
+
+        .inputContainer input {
+            flex: 1;
+            padding: 10px;
+            border: none;
+            border-radius: 5px 0 0 5px;
+            font-size: 16px;
+        }
+
+        .inputContainer button {
+            margin: 0;
+            border-radius: 0 5px 5px 0;
+        }
+
+        #response {
+            margin: 20px;
+            padding: 10px;
+            border-radius: 5px;
+            background-color: rgba(0, 255, 255, 0.1);
+        }
+    </style>
+    <script src="js/socket.io.min.js"></script>
+</head>
+<body>
+    <div class="container">
+        <div class="orb"></div>
+        <div class="name-tag">Marvin</div>
+        <button id="talkButton">Talk to Marvin</button>
+        <div id="response" style="display:none;"></div>
+        <audio id="audio" style="display:none;"></audio>
+
+        <div class="chat">
+            <div id="chatWindow" class="chatWindow"></div>
+            <div class="inputContainer">
+                <input type="text" id="textInput" placeholder="Type your message...">
+                <button id="sendTextButton">Send</button>
+            </div>
+        </div>
+    </div>
+    <script src="popup.js"></script>
+</body>
+</html>

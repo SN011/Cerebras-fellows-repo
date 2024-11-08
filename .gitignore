@@ -1,0 +1,8 @@
+drive_batches/
+mapped_batches/
+final_aggregated/
+leetcode/
+tools/__pycache__/
+
+drive_batches/
+.env
