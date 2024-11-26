@@ -1,9 +1,9 @@
 from pydantic import root_validator
 from tools.imports import *
-import tools.initialize_groq
+
 from tools.auth import authenticate
 from tools.file_mgmt_tools import DriveDictUpdateTool
-client,_ = tools.initialize_groq.init_groq()
+# client,_ = tools.initialize_cerebras.init_cerebras()
 
 DOCUMENT_IDS_FILE = "document_ids.txt"
 SCOPES = ['https://www.googleapis.com/auth/documents', 'https://www.googleapis.com/auth/drive']
