@@ -19,17 +19,22 @@ from langchain_core.messages import BaseMessage, HumanMessage, AIMessage
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import JsonOutputParser
 from langchain_cerebras import ChatCerebras
-from langgraph.graph import StateGraph, END
+from langgraph.graph import StateGraph, END, START
 from langgraph.prebuilt import ToolExecutor
 from langchain_core.tools import tool
 from tools.initialize_cerebras import init_cerebras
 from Utils_cerebras import (
     initialize_web_search_agent,
     initialize_pdf_search_agent,
-    run_quote_logics,
+    initialize_quote_bot,
     vector_embedding
 )
 from flask import Flask
+from langgraph.graph.message import add_messages
+from langgraph.prebuilt import ToolNode, tools_condition
+from langchain_core.messages import HumanMessage, AIMessage
+from langchain_core.prompts import ChatPromptTemplate
+from langchain_core.prompts import MessagesPlaceholder
 
 # Initialize configuration
 load_dotenv()
@@ -79,205 +84,129 @@ executor = ThreadPoolExecutor(max_workers=20)
 # Initialize Cerebras
 client, llm = init_cerebras()
 
-# Define state type
-class AgentState(TypedDict):
-    messages: List[BaseMessage]
-    next: Optional[str]
-    error: Optional[str]
-
-# Define tools
+# Define tools properly with clear return types
 @tool
-def search_web(query: str) -> str:
-    """Search the web for information"""
-    agent = initialize_web_search_agent(llm)
-    result = agent.invoke({"input": query})
-    return result["output"]
-
-@tool
-def search_hvac_docs(query: str) -> str:
-    """Search HVAC documentation"""
-    result = initialize_pdf_search_agent(llm, query, vector_embedding())
-    return result
-
-@tool
-def generate_quote(chat_history: List[Dict]) -> str:
-    """Generate an HVAC quote"""
-    result = run_quote_logics(client, llm, chat_history=chat_history)
-    return result
-
-# Create tool executor
-tools = [search_web, search_hvac_docs, generate_quote]
-tool_executor = ToolExecutor(tools)
-
-# Define the agent prompt
-agent_prompt = ChatPromptTemplate.from_messages([
-    ("system", """You are Marvin, a highly intelligent assistant specializing in HVAC services. 
-    When users mention HVAC issues, include 'I will instruct the technician agent'.
-    When cost determination is needed, say 'determining the HVAC quote'.
-    When all quote information is gathered, say 'Questionnaire complete'.
-    For non-HVAC queries, say 'forwarding to web search agent'."""),
-    ("human", "{input}"),
-])
-
-# Define agent functions
-def should_continue(state: AgentState) -> str:
-    """Enhanced routing logic with detailed logging"""
+async def web_search(query: str) -> str:
+    """Search the web for HVAC related information."""
     try:
-        if state.get("error"):
-            logger.error(f"Error in state: {state['error']}")
-            return "error_handler"
-            
-        if not state["messages"]:
-            logger.debug("No messages in state, continuing to agent")
-            return "continue"
-        
-        last_message = state["messages"][-1]
-        if not isinstance(last_message, AIMessage):
-            logger.debug("Last message is not AI message, continuing to agent")
-            return "continue"
-            
-        content = last_message.content.lower()
-        logger.debug(f"Routing based on content: {content[:100]}...")
-        
-        # Define routing conditions with logging
-        routing_conditions = {
-            "questionnaire complete": "quote",
-            "i will instruct the technician agent": "hvac",
-            "determining the hvac quote": "quote",
-            "forwarding to web search agent": "search"
-        }
-        
-        for phrase, route in routing_conditions.items():
-            if phrase in content:
-                logger.info(f"Routing to {route} based on phrase: {phrase}")
-                return route
-                
-        logger.debug("No specific routing condition met, continuing to agent")
-        return "continue"
+        web_chain = await initialize_web_search_agent(llm)
+        result = await web_chain.ainvoke({"input": query})
+        return str(result["output"]) if "output" in result else str(result)
     except Exception as e:
-        logger.error(f"Error in routing: {e}")
-        return "error_handler"
+        logger.error(f"Web search failed: {e}")
+        return f"Web search error: {str(e)}"
 
-def call_llm(state: AgentState) -> AgentState:
-    """LLM node with comprehensive error handling and logging"""
+@tool
+async def pdf_search(query: str) -> str:
+    """Search through HVAC documentation and manuals."""
     try:
-        if not state["messages"]:
-            logger.warning("LLM node: No messages in state")
-            return {
-                "messages": [],
-                "next": None,
-                "error": "No messages to process"
-            }
-        
-        last_message = state["messages"][-1]
-        logger.info(f"Processing message with LLM: {last_message.content[:100]}...")
-        
-        # Format prompt with explicit system message
-        prompt_messages = agent_prompt.format_messages(
-            input=last_message.content,
-            chat_history=state["messages"][:-1]  # Include chat history except last message
-        )
-        
-        # Get LLM response with timeout
-        response = llm.invoke(
-            prompt_messages,
-            temperature=0.7,  # Add temperature for more dynamic responses
-            timeout=30  # Add timeout to prevent hanging
-        )
-        
-        logger.info(f"LLM response generated: {response.content[:100]}...")
-        return {
-            "messages": state["messages"] + [AIMessage(content=response.content)],
-            "next": None,
-            "error": None
-        }
-    except Exception as e:
-        logger.error(f"Error in LLM node: {e}")
-        return {
-            "messages": state["messages"],
-            "next": None,
-            "error": f"LLM processing failed: {str(e)}"
-        }
-
-# Create reusable tool node function generator
-def create_tool_node(tool_executor, tool_name: str):
-    """Create a node function that executes a specific tool with proper error handling"""
-    def node_function(state: AgentState) -> AgentState:
-        try:
-            if not state["messages"]:
-                logger.warning(f"{tool_name} node: No messages in state")
-                return {
-                    "messages": [],
-                    "next": None,
-                    "error": "No messages to process"
-                }
-            
-            last_message = state["messages"][-1]
-            logger.info(f"Executing {tool_name} with input: {last_message.content[:100]}...")
-            
-            # Use run instead of arun for synchronous execution
-            result = tool_executor.run(tool_name, last_message.content)
-            
-            logger.info(f"{tool_name} execution successful")
-            return {
-                "messages": state["messages"] + [AIMessage(content=str(result))],
-                "next": None,
-                "error": None
-            }
-        except Exception as e:
-            logger.error(f"Error in {tool_name} node: {e}")
-            return {
-                "messages": state["messages"],
-                "next": None,
-                "error": f"{tool_name} execution failed: {str(e)}"
-            }
-    return node_function
-
-# Create the graph
-def setup_workflow():
-    """Setup workflow with comprehensive error handling and logging"""
-    try:
-        workflow = StateGraph(AgentState)
-        
-        # Add nodes with explicit logging
-        logger.info("Setting up workflow nodes...")
-        workflow.add_node("agent", call_llm)
-        workflow.add_node("search", create_tool_node(tool_executor, "search_web"))
-        workflow.add_node("hvac", create_tool_node(tool_executor, "search_hvac_docs"))
-        workflow.add_node("quote", create_tool_node(tool_executor, "generate_quote"))
-        workflow.add_node("error_handler", lambda x: {
-            **x,
-            "messages": x["messages"] + [AIMessage(content="I apologize, but I encountered an error. Let me try to help you differently.")]
+        pdf_chain = await initialize_pdf_search_agent(llm, "", vector_embedding(), [])
+        result = await pdf_chain.ainvoke({
+            "input": query,
+            "context": "",  # Add empty context if needed
+            "messages": [{"role": "user", "content": query}]
         })
-        
-        # Add edges with logging
-        logger.info("Setting up workflow edges...")
-        workflow.add_conditional_edges(
-            "agent",
-            should_continue,
-            {
-                "search": "search",
-                "hvac": "hvac",
-                "quote": "quote",
-                "continue": "agent",
-                "error": "error_handler"
-            }
-        )
-        
-        workflow.add_edge("search", "agent")
-        workflow.add_edge("hvac", "agent")
-        workflow.add_edge("quote", END)
-        workflow.add_edge("error_handler", END)
-        
-        logger.info("Workflow setup completed successfully")
-        return workflow.compile()
+        return str(result["output"]) if "output" in result else str(result)
     except Exception as e:
-        logger.error(f"Error setting up workflow: {e}")
-        raise
+        logger.error(f"PDF search failed: {e}")
+        return f"PDF search error: {str(e)}"
 
-# Initialize the workflow
-app_chain = setup_workflow()
+# Create tools array
+tools = [web_search, pdf_search]
 
+# Define the state
+class State(TypedDict):
+    messages: Annotated[list[BaseMessage], add_messages]
+
+# Create the main graph
+graph = StateGraph(State)
+
+# Define chatbot node with proper tool handling
+async def chatbot(state: State) -> dict:
+    """Main chatbot node that processes messages using tools"""
+    try:
+        messages = state["messages"]
+        last_message = messages[-1].content.lower()
+        
+        # Check if message contains HVAC or technical terms
+        hvac_keywords = ["hvac", "heating", "cooling", "ventilation", "manual", 
+                        "system", "temperature", "maintenance", "fluctuation"]
+        
+        if any(keyword in last_message for keyword in hvac_keywords):
+            try:
+                # Use ainvoke instead of direct call
+                pdf_result = await pdf_search.ainvoke(last_message)
+                logger.info(f"PDF search result: {pdf_result}")
+                
+                if isinstance(pdf_result, str) and "error" in pdf_result.lower():
+                    # Fallback to web search if PDF search fails
+                    web_result = await web_search.ainvoke(last_message)
+                    response_text = f"From web search: {web_result}"
+                else:
+                    response_text = f"From HVAC documentation: {pdf_result}"
+                
+                await sio.emit('bot_response', {'response': response_text})
+                await sio.emit('message', {'text': response_text, 'type': 'bot'})
+                
+                return {"messages": [AIMessage(content=response_text)]}
+            except Exception as e:
+                logger.error(f"Tool execution failed: {e}")
+                raise
+        
+        # For general conversation, use the LLM directly
+        llm_with_tools = llm.bind_tools(tools=tools)
+        response = await llm_with_tools.ainvoke(messages)
+        response_text = response.content
+        
+        await sio.emit('bot_response', {'response': response_text})
+        await sio.emit('message', {'text': response_text, 'type': 'bot'})
+        
+        return {"messages": [response]}
+        
+    except Exception as e:
+        error_msg = f"Error in chatbot node: {e}"
+        logger.error(error_msg)
+        await sio.emit('error', {'error': error_msg})
+        return {"messages": [AIMessage(content="I encountered an error processing your request.")]}
+
+# Create tool node with proper error handling
+tool_node = ToolNode(tools=tools)
+
+# Add nodes to graph
+graph.add_node("chatbot", chatbot)
+graph.add_node("tools", tool_node)
+
+# Add conditional edges with more specific routing
+def route_message(state: State) -> str:
+    """Route messages to appropriate node based on content"""
+    if not state["messages"]:
+        return "chatbot"
+    
+    last_message = state["messages"][-1].content.lower()
+    if any(tool.name.lower() in last_message for tool in tools):
+        return "tools"
+    return "chatbot"
+
+graph.add_conditional_edges(
+    START,
+    route_message,
+    {
+        "tools": "tools",
+        "chatbot": "chatbot"
+    }
+)
+graph.add_edge("tools", "chatbot")
+graph.add_edge("chatbot", END)
+
+# Compile graph
+app_chain = graph.compile()
+from IPython.display import Image, display
+
+try:
+    display(Image(graph.get_graph().draw_mermaid_png()))
+except Exception:
+    # This requires some extra dependencies and is optional
+    pass
 # Text-to-speech functions
 def synthesize_and_save(text: str) -> None:
     """Synthesize text to speech and save to file"""
@@ -330,27 +259,19 @@ async def talk():
         
         logger.info(f"Transcription completed: {transcription[:100]}...")
         
-        # Initialize state with all required fields
+        # Initialize state with transcription
         initial_state = {
-            "messages": [HumanMessage(content=transcription)],
-            "next": None,
-            "error": None
+            "messages": [HumanMessage(content=transcription)]
         }
         
         # Execute workflow with timeout
-        logger.info("Executing workflow...")
         try:
-            async with asyncio.timeout(30):  # Add timeout for workflow execution
-                result = app_chain.invoke(initial_state)
+            async with asyncio.timeout(30):
+                result = await app_chain.ainvoke(initial_state)
         except asyncio.TimeoutError:
             logger.error("Workflow execution timed out")
             return jsonify({"error": "Request timed out"}), 504
         
-        # Check for errors
-        if result.get("error"):
-            logger.error(f"Workflow error: {result['error']}")
-            return jsonify({"error": result["error"]}), 500
-            
         # Get last message
         last_message = result["messages"][-1]
         logger.info(f"Generated response: {last_message.content[:100]}...")
@@ -368,26 +289,49 @@ async def text_input():
     try:
         data = await request.get_json()
         text = data.get('text', '')
+        logger.info(f"Received text input: {text}")
 
         if not text:
             return jsonify({"error": "No text provided"}), 400
 
         # Initialize state with the text input
-        state = {"messages": [HumanMessage(content=text)]}
+        state = {
+            "messages": [HumanMessage(content=text)]
+        }
         
-        # Invoke the chain and get result
-        result = app_chain.invoke(state)
-        
-        # Get the last message (the AI's response)
-        last_message = result["messages"][-1]
-        
-        # Synthesize speech for the response
-        await synthesize_speech(last_message.content)
-        
-        return jsonify({'response': last_message.content})
+        try:
+            async with asyncio.timeout(60):  # Increased timeout
+                result = await app_chain.ainvoke(state)
+                
+                if result and "messages" in result and result["messages"]:
+                    last_message = result["messages"][-1]
+                    response_text = last_message.content
+                    
+                    logger.info(f"Generated response: {response_text[:100]}...")
+                    
+                    # Emit response through both SocketIO channels
+                    await sio.emit('bot_response', {'response': response_text})
+                    await sio.emit('message', {'text': response_text, 'type': 'bot'})
+                    
+                    # Synthesize speech
+                    await synthesize_speech(response_text)
+                    
+                    return jsonify({
+                        'response': response_text,
+                        'status': 'success'
+                    })
+                    
+        except asyncio.TimeoutError:
+            error_msg = "Request timed out"
+            await sio.emit('error', {'error': error_msg})
+            logger.error("Workflow execution timed out")
+            return jsonify({"error": error_msg}), 504
+            
     except Exception as e:
+        error_msg = str(e)
+        await sio.emit('error', {'error': error_msg})
         logger.error(f"Error processing text input: {e}")
-        return jsonify({"error": "Failed to process text input"}), 500
+        return jsonify({"error": error_msg}), 500
 
 @app.route('/get_audio')
 async def get_audio():
@@ -395,12 +339,13 @@ async def get_audio():
 
 # Socket.IO event handlers
 @sio.event
-async def connect(sid, environ, auth):
-    logger.debug(f'Client connected: {sid}')
+async def connect(sid, environ):
+    logger.info(f"Client connected: {sid}")
+    await sio.emit('connected', {'status': 'connected'}, room=sid)
 
 @sio.event
 async def disconnect(sid):
-    logger.debug(f'Client disconnected: {sid}')
+    logger.info(f"Client disconnected: {sid}")
 
 # Audio recording functions
 async def record_audio():
@@ -461,7 +406,8 @@ if __name__ == '__main__':
     import uvicorn
     config = uvicorn.Config(app_asgi, host="127.0.0.1", port=5000, log_level="info")
     server = uvicorn.Server(config)
-    
+    async def startup():
+        await initialize_agents()
     loop = asyncio.get_event_loop()
     if loop.is_running():
         loop.create_task(server.serve())

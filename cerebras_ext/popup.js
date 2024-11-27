@@ -7,7 +7,26 @@ let socket = io('http://localhost:5000');
 socket.on('connect', () => {
     console.log('Connected to server');
 });
+socket.on('bot_response', (data) => {
+    console.log('Received bot response:', data);
+    displayResponse(data.response);
+});
 
+socket.on('message', (data) => {
+    console.log('Received message:', data);
+    if (data.type === 'bot') {
+        displayResponse(data.text);
+    }
+});
+
+socket.on('error', (data) => {
+    console.error('Error:', data);
+    displayError(data.error);
+});
+
+socket.on('connected', (data) => {
+    console.log('Socket connected:', data);
+});
 socket.on('tts_complete', (data) => {
     console.log('TTS synthesis complete:', data.message);
     const audio = document.getElementById('audio');
