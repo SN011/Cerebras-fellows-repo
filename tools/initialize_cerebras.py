@@ -10,6 +10,6 @@ def init_cerebras():
     )
 
     llm = ChatCerebras(api_key= client.api_key,
-                model_name = "llama3.1-70b", streaming=True)
+                model_name = "llama3.3-70b", streaming=True)
     
     return client, llm
