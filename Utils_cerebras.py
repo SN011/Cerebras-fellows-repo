@@ -477,9 +477,9 @@ from contextlib import contextmanager
 class CtxMgr:
     @contextmanager
     def temporary_temperature(self,llm:ChatCerebras, new_temp:float):
-        original_temp = llm.temperature  # Store the original temperature
-        llm.temperature = new_temp  # Set the temperature to the temporary value
+        original_temp = llm.temperature  # Store original temp
+        llm.temperature = new_temp  # Set temp to the temporary value
         try:
-            yield  # Pause here and allow the `with` block to execute
+            yield  # Pause here and allow with block to execute
         finally:
             llm.temperature = original_temp
