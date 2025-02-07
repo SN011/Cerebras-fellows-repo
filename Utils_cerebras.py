@@ -127,7 +127,7 @@ def vector_embedding():
     # text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200)
     # final_documents = text_splitter.split_documents(docs)
     # vectors = FAISS.from_documents(final_documents, embeddings)
-    from langchain_huggingface import HuggingFaceEmbeddings
+ 
     
     vectors = FAISS.load_local('./vector_db',embeddings=HuggingFaceEmbeddings(),allow_dangerous_deserialization=True)
     return vectors
@@ -143,6 +143,7 @@ async def initialize_pdf_search_agent(llm:ChatCerebras, prompt1: str, vectors: F
         Please provide the most accurate response based on the question.
         IMPORTANT: YOU ARE A MASTER HVAC TECHNICIAN AND YOU MUST NEVER TAKE ANY GUESSES. YOU MUST ALWAYS CITE YOUR SOURCES, BUT TALK LIKE YOU KNOW IT ALL!! PLEASE DO NOT SAY TO CONSULT A TECHNICIAN, AS YOU ARE THE TECHNICIAN!!!
         IMPORTANT: YOU MUST NEVER INCLUDE ASTERISKS OR QUOTATION MARKS IN YOUR RESPONSE!!!!!!
+        IMPORTANT: YOUR RESPONSES ARE PROFESSIONAL AND ELOQUENT, WITHOUT ANY MISTAKES IN GRAMMAR, SENTENCE STRUCTURE, PUNCTUATION.
         <context>
         {context}
         <context>
@@ -155,7 +156,7 @@ async def initialize_pdf_search_agent(llm:ChatCerebras, prompt1: str, vectors: F
     document_chain = create_stuff_documents_chain(llm, prompt)
     retriever = vectors.as_retriever()
     retrieval_chain = create_retrieval_chain(retriever, document_chain)
-    start = time.process_time()
+    # start = time.process_time()
     response = retrieval_chain.invoke({'input': prompt1})
     # print(f"Response time: {time.process_time() - start}")
     # print(response['answer'])
