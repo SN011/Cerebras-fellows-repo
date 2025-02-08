@@ -7,3 +7,5 @@ tools/__pycache__/
 drive_batches/
 .env
 vector_db/
+
+LGraphNtbks/
