@@ -135,6 +135,7 @@ def vector_embedding():
 async def initialize_pdf_search_agent(llm:ChatCerebras, prompt1: str, vectors: FAISS, chat_history: ConversationBufferMemory):
     print("RUNNING initialize_pdf_search_agent")
     global mem
+    
     mem = ConversationBufferMemory(llm=llm)
     
     prompt = ChatPromptTemplate.from_template(
