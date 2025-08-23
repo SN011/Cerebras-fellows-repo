@@ -1,21 +1,21 @@
-
 {
-    "manifest_version": 2,
+    "manifest_version": 3,
     "name": "Marvin the Orb",
     "version": "1.0",
     "permissions": [
         "storage",
-        "tabs",
+        "tabs"
+    ],
+    "host_permissions": [
         "http://localhost/*"
     ],
     "background": {
-        "scripts": ["background.js"],
-        "persistent": false
+        "service_worker": "background.js"
     },
     "icons": {
         "48": "icon48.png"
     },
-    "browser_action": {
+    "action": {
         "default_icon": {
             "48": "icon48.png"
         }
